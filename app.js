@@ -102,12 +102,13 @@
      HOME: app switcher changes the name's typeface
      ========================================================= */
   const heroName = $('#heroName');
+  const finePointerHero = window.matchMedia('(hover: hover)').matches;
   $$('.sw-card').forEach(card => {
     const on = () => { heroName.className = 'name f-' + card.dataset.font; };
     const off = () => { heroName.className = 'name'; };
-    card.addEventListener('mouseenter', on);
+    if (finePointerHero) card.addEventListener('mouseenter', on);
     card.addEventListener('focus', on);
-    card.addEventListener('mouseleave', off);
+    if (finePointerHero) card.addEventListener('mouseleave', off);
     card.addEventListener('blur', off);
   });
 
@@ -557,7 +558,18 @@
   const readerEl = $('#reader');
   const aaPop = $('#rdAaPop');
   const aaBtn = $('#rdAa');
-  const rd = modal(readerEl, { onClose: () => { aaPop.hidden = true; aaBtn.setAttribute('aria-expanded', 'false'); if (curlState) curlEnd(true); zoomBack(); } });
+  const rd = modal(readerEl, { onClose: () => { aaPop.hidden = true; aaBtn.setAttribute('aria-expanded', 'false'); if (curlState) curlEnd(true); zoomBack(); readerHistoryClose(); } });
+  // While a book is open, Back (Safari's swipe or the button) closes the book instead of leaving
+  // the page. Skipped inside an embedding frame, where history belongs to the host page.
+  const ownHistory = window.top === window.self;
+  function readerHistoryOpen() { if (ownHistory && !(history.state && history.state.reader)) try { history.pushState({ reader: true }, ''); } catch (e) { /* history is optional */ } }
+  function readerHistoryClose() { if (ownHistory && history.state && history.state.reader) try { history.back(); } catch (e) { /* history is optional */ } }
+  addEventListener('popstate', () => {
+    const inBook = !!(history.state && history.state.reader);
+    if (rd.isOpen() && !inBook) rd.close();
+    else if (!rd.isOpen() && inBook) openReader(rIdx);           // Forward reopens the book you just closed
+  });
+  if (ownHistory && history.state && history.state.reader) try { history.replaceState(null, ''); } catch (e) { /* history is optional */ }
   let rIdx = 0;
   let rTheme = store.get('rtheme', 'paper');
   let rSize = store.get('rsize', 18);
@@ -612,6 +624,7 @@
   function openReader(i, src) {
     rIdx = i;
     paintReader();
+    readerHistoryOpen();
     if (reduce || !src) { rd.open('#rdNext'); return; }
     const r = src.getBoundingClientRect();
     const paper = getComputedStyle(readerEl).backgroundColor;
@@ -632,30 +645,32 @@
     c.animate([{ transform: fullScale(r), backgroundColor: paper }, { transform: 'none', backgroundColor: BOOKS[rIdx].c }], { duration: 520, easing: EASE_OUT, fill: 'forwards' }).onfinish = () => c.remove();
   }
   /* ---------- iOS-style page curl ----------
-     The turning page is cut into thin vertical strips. Every frame each strip is laid
-     onto a virtual cylinder that rolls from the page edge toward the spine, so the paper
-     lifts, bends and lays over like a real page. Front faces carry the page you are
-     leaving; back faces carry the page that lands on the other side. On phones the page
-     peels off to the left and its back shows the print faintly through the paper. */
+     The turning page is cut into thin vertical strips. Every frame each strip is laid onto a
+     cylinder that rolls from the page edge toward the spine, so the paper lifts, bends and lays
+     over like a real page. It is drawn with plain 2D transforms rather than 3D layers, because
+     Safari leaves gaps when it composites dozens of 3D planes. Strips past the fold are mirrored
+     and show the back of the paper: the next page on a two-page spread, or this page's print
+     showing faintly through on a phone. */
   let curlState = null;
   const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
   const easeOutCubic = k => 1 - Math.pow(1 - k, 3);
   const bookPage = (b, i) => `<article class="rd-page rd-left">${leftPage(b, i)}</article><article class="rd-page rd-right">${rightPage(b, i)}</article>`;
+  const CAMERA = 2400; // paper lifted toward you looks slightly bigger, as through a lens this far away
 
-  function makeLeaf({ w, h, front, back, frontCls, backCls, mirrorBack = false, frontScroll = 0, backScroll = 0, autoHeight = false }) {
+  function makeLeaf({ w, h, frontHtml, backHtml, frontCls, backCls, seeThrough = false, frontScroll = 0, backScroll = 0, autoHeight = false }) {
     w = Math.round(w);
-    const sw = Math.ceil(w / Math.max(16, Math.min(44, Math.round(w / 13))));
+    const sw = Math.ceil(w / Math.max(14, Math.min(40, Math.round(w / 15))));
     const n = Math.ceil(w / sw);
     const size = autoHeight ? `width:${w}px;min-height:${h}px` : `width:${w}px;height:${h}px`;
     let html = '';
     for (let k = 0; k < n; k++) {
       const s = k * sw, len = Math.min(sw, w - s);
-      const backLeft = mirrorBack ? -s : -(w - s - len);
-      const mirror = mirrorBack ? `;transform:scaleX(-1);transform-origin:${s + len / 2}px 0` : '';
-      html += `<div class="curl-strip" data-s="${s}" data-l="${len}" style="left:${s}px;width:${len + (k < n - 1 ? 1 : 0)}px">` +
-        `<div class="curl-face"><div class="curl-page ${frontCls}" style="${size};left:${-s}px;top:${-frontScroll}px">${front}</div><i class="curl-dark"></i></div>` +
-        `<div class="curl-face back"><div class="curl-page ${backCls}" style="${size};left:${backLeft}px;top:${-backScroll}px${mirror}">${back}</div>` +
-        (mirrorBack ? '<i class="curl-paper"></i>' : '') + '<i class="curl-dark"></i><i class="curl-gloss"></i></div></div>';
+      const backFace = seeThrough
+        ? `<div class="curl-face back"><div class="curl-page ${backCls}" style="${size};left:${-s}px;top:${-backScroll}px">${backHtml}</div><i class="curl-paper"></i></div>`
+        : `<div class="curl-face back mirror"><div class="curl-page ${backCls}" style="${size};left:${-(w - s - len)}px;top:${-backScroll}px">${backHtml}</div></div>`;
+      html += `<div class="curl-strip" data-s="${s}" data-l="${len}" style="left:${s}px;width:${len}px;z-index:${k + 1}">` +
+        `<div class="curl-face front"><div class="curl-page ${frontCls}" style="${size};left:${-s}px;top:${-frontScroll}px">${frontHtml}</div></div>` +
+        backFace + '<i class="curl-dark"></i><i class="curl-gloss"></i></div>';
     }
     const leaf = document.createElement('div');
     leaf.className = 'curl-leaf';
@@ -663,8 +678,7 @@
     leaf.style.height = h + 'px';
     leaf.innerHTML = html;
     leaf._strips = $$('.curl-strip', leaf).map(el => ({
-      el, s: +el.dataset.s, l: +el.dataset.l,
-      fd: el.querySelector('.curl-dark'), bd: el.querySelector('.back .curl-dark'), gl: el.querySelector('.curl-gloss')
+      el, s: +el.dataset.s, l: +el.dataset.l, dk: el.querySelector('.curl-dark'), gl: el.querySelector('.curl-gloss')
     }));
     return leaf;
   }
@@ -680,35 +694,35 @@
   function curlFrame(st, p) {
     st.p = p;
     const W = st.w;
-    const c = W * (1 - p);                                                      // where the paper leaves the page
+    const c = W * (1 - p);                                                       // where the paper leaves the page
     const R = W * (0.045 + 0.16 * Math.sin(Math.PI * p)) * (1 - Math.pow(p, 6)); // radius of the bend
     const half = Math.PI * R;
-    const map = s => {
-      if (s <= c) return [s, 0];
-      const arc = s - c;
-      if (R > 0.05 && arc <= half) { const th = arc / R; return [c + R * Math.sin(th), R * (1 - Math.cos(th))]; }
-      return [2 * c + half - s, 2 * R + 0.5];
-    };
-    const ang = s => (s <= c ? 0 : R > 0.05 && s - c <= half ? (s - c) / R : Math.PI);
-    const front = a => (0.3 * (1 - Math.cos(a))).toFixed(3);                    // paper turning away from the light
-    const back = a => (0.3 * (1 + Math.cos(a))).toFixed(3);
-    const gloss = a => (0.32 * Math.exp(-Math.pow((a - 2.3) / 0.42, 2))).toFixed(3); // highlight along the curl
-    const paint = (el, key, css) => { if (el[key] !== css) { el[key] = css; el.style.background = css; } };
+    const bent = s => R > 0.05 && s - c <= half;
+    const ang = s => (s <= c ? 0 : bent(s) ? (s - c) / R : Math.PI);
+    const X = s => (s <= c ? s : bent(s) ? c + R * Math.sin((s - c) / R) : 2 * c + half - s);
     st.leaf._strips.forEach(sp => {
-      const s0 = sp.s, s1 = sp.s + sp.l;
-      const [x0, z0] = map(s0), [x1, z1] = map(s1);
-      const a = Math.atan2(z1 - z0, x1 - x0);
-      sp.el.style.transform = `translate3d(${(x0 - s0).toFixed(2)}px, 0, ${z0.toFixed(2)}px) rotateY(${(-a).toFixed(4)}rad)`;
-      const a0 = ang(s0), a1 = ang(s1);
-      paint(sp.fd, '_bg', `linear-gradient(90deg, rgba(0,0,0,${front(a0)}), rgba(0,0,0,${front(a1)}))`);
-      // the back face is turned around, so its left edge is the strip's right edge
-      paint(sp.bd, '_bg', `linear-gradient(90deg, rgba(0,0,0,${back(a1)}), rgba(0,0,0,${back(a0)}))`);
-      paint(sp.gl, '_bg', `linear-gradient(90deg, rgba(255,255,255,${gloss(a1)}), rgba(255,255,255,${gloss(a0)}))`);
+      const s0 = sp.s, s1 = sp.s + sp.l, a0 = ang(s0), a1 = ang(s1);
+      let tf = 'none', flip = false;
+      if (a1 > 0) {
+        const x0 = X(s0), span = X(s1) - x0;
+        flip = span < 0;                                                         // past the fold: we see the back
+        const lift = CAMERA / (CAMERA - R * (1 - Math.cos((a0 + a1) / 2)));
+        tf = `translate3d(${(x0 - s0).toFixed(2)}px, 0, 0) scale(${((span + (flip ? -0.6 : 0.6)) / sp.l).toFixed(4)}, ${lift.toFixed(4)})`;
+      }
+      if (sp.tf !== tf) { sp.tf = tf; sp.el.style.transform = tf; }
+      if (sp.flip !== flip) { sp.flip = flip; sp.el.classList.toggle('flip', flip); }
+      // paper turning away from the light darkens; the back of the curl catches a highlight
+      const dark = a => (0.3 * (flip ? 1 + Math.cos(a) : 1 - Math.cos(a))).toFixed(3);
+      const gloss = a => (0.34 * Math.exp(-Math.pow((a - 2.25) / 0.45, 2))).toFixed(3);
+      const dk = a1 > 0 ? `linear-gradient(90deg, rgba(0,0,0,${dark(a0)}), rgba(0,0,0,${dark(a1)}))` : 'none';
+      const gl = flip ? `linear-gradient(90deg, rgba(255,255,255,${gloss(a0)}), rgba(255,255,255,${gloss(a1)}))` : 'none';
+      if (sp.dkv !== dk) { sp.dkv = dk; sp.dk.style.background = dk; }
+      if (sp.glv !== gl) { sp.glv = gl; sp.gl.style.background = gl; }
     });
     const fade = Math.pow(Math.sin(Math.PI * Math.min(1, Math.max(0, p))), 0.6);
-    st.shR._i.style.transform = `translateX(${(c + R).toFixed(1)}px)`;          // shadow the curl casts ahead of it
+    st.shR._i.style.transform = `translateX(${(c + R).toFixed(1)}px)`;           // shadow the curl casts ahead of it
     st.shR._i.style.opacity = fade.toFixed(3);
-    if (st.shL) {                                                                // shadow under the landing edge
+    if (st.shL) {                                                                 // shadow under the landing edge
       const edge = 2 * c + half - W;
       st.shL._i.style.transform = `translateX(${(W + edge - 60).toFixed(1)}px)`;
       st.shL._i.style.opacity = (edge < 0 ? Math.min(1, R / 12) * fade : 0).toFixed(3);
@@ -727,8 +741,8 @@
       const w = R.offsetWidth, h = R.offsetHeight, spine = R.offsetLeft, top = R.offsetTop;
       const leaf = makeLeaf({
         w, h, frontCls: 'rd-page rd-right', backCls: 'rd-page rd-left',
-        front: dir > 0 ? R.innerHTML : rightPage(nb, n),
-        back: dir > 0 ? leftPage(nb, n) : L.innerHTML
+        frontHtml: dir > 0 ? R.innerHTML : rightPage(nb, n),
+        backHtml: dir > 0 ? leftPage(nb, n) : L.innerHTML
       });
       leaf.style.left = spine + 'px';
       leaf.style.top = top + 'px';
@@ -751,7 +765,7 @@
       host.style.cssText = `left:${sr.left - rr.left}px;top:${sr.top - rr.top}px;width:${w}px;height:${h}px`;
       const content = dir > 0 ? bookPage(cb, cur) : bookPage(nb, n);
       const off = dir > 0 ? scroll : 0;
-      const leaf = makeLeaf({ w, h, front: content, back: content, frontCls: 'curl-col', backCls: 'curl-col', mirrorBack: true, frontScroll: off, backScroll: off, autoHeight: true });
+      const leaf = makeLeaf({ w, h, frontHtml: content, backHtml: content, frontCls: 'curl-col', backCls: 'curl-col', seeThrough: true, frontScroll: off, backScroll: off, autoHeight: true });
       const shR = makeShade('r', 0, 0, w, h);
       host.append(shR, leaf);
       readerEl.appendChild(host);
@@ -802,61 +816,138 @@
     if (e.key === 'ArrowRight') turn(1);
     if (e.key === 'ArrowLeft') turn(-1);
   });
-  // drag the page: it follows your finger, then finishes or falls back when you let go
+  // Turning pages by hand. A touch is axis-locked: once a swipe is clearly sideways the page
+  // owns it, so it neither scrolls nor gets taken by Safari's back/forward swipe. Vertical
+  // swipes scroll as usual. A mouse drags the same way.
   (() => {
     const stage = $('#rdStage');
-    let drag = null;
+    const EDGE = 30;                       // Safari starts its back/forward swipe this close to the screen edge
+    const hasTouch = 'ontouchstart' in window;
+    const nearEdge = x => x < EDGE || x > innerWidth - EDGE;
     const progressOf = (st, dx) => {
       const span = st.w * (narrowMQ.matches ? 1.05 : 1.5);
       const q = Math.min(1, Math.max(0, (st.dir > 0 ? -dx : dx) / span));
       return st.dir > 0 ? q : 1 - q;
     };
-    stage.addEventListener('pointerdown', e => {
-      if (curlState || e.button !== 0 || reduce) return;
-      drag = { x0: e.clientX, y0: e.clientY, id: e.pointerId, live: false, vx: 0, lx: e.clientX, lt: performance.now() };
-    });
-    stage.addEventListener('pointermove', e => {
-      if (!drag || e.pointerId !== drag.id) return;
-      const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
-      if (!drag.live) {
-        if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }
-        if (Math.abs(dx) < 10) return;
-        if (!curlBegin(dx < 0 ? 1 : -1)) { drag = null; return; }
-        drag.live = true;
-        readerEl.classList.add('curling');
-        try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-      }
-      const now = performance.now();
-      drag.vx = (e.clientX - drag.lx) / Math.max(1, now - drag.lt);
-      drag.lx = e.clientX;
-      drag.lt = now;
-      curlFrame(curlState, progressOf(curlState, dx));
-    });
-    const release = e => {
-      if (!drag || e.pointerId !== drag.id) return;
-      const d = drag;
-      drag = null;
-      readerEl.classList.remove('curling');
-      if (!d.live) {
-        // a tap near either edge turns the page, like the margins in Books
-        const r = stage.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width;
-        const still = Math.abs(e.clientX - d.x0) < 6 && Math.abs(e.clientY - d.y0) < 6;
-        if (e.type === 'pointerup' && still && !e.target.closest('button, a') && !String(window.getSelection())) {
-          if (fx > 0.86) turn(1); else if (fx < 0.14) turn(-1);
-        }
-        return;
-      }
+    // let go: finish the turn if the page is far enough over or was flicked, otherwise let it fall back
+    const settle = (cancelled, vx) => {
       const st = curlState;
       if (!st) return;
-      const forward = st.dir > 0 ? -d.vx : d.vx;
+      const forward = st.dir > 0 ? -vx : vx;
       const gone = st.dir > 0 ? st.p : 1 - st.p;
-      const ok = e.type !== 'pointercancel' && forward > -0.3 && (gone > 0.3 || forward > 0.45);
+      const ok = !cancelled && forward > -0.3 && (gone > 0.3 || forward > 0.45);
       const target = st.dir > 0 ? (ok ? 1 : 0) : (ok ? 0 : 1);
       if (ok) readerChrome(st.n);
       curlAnimate(st, target, 170 + 560 * Math.abs(target - st.p), easeOutCubic, () => curlEnd(ok));
     };
-    stage.addEventListener('pointerup', release);
-    stage.addEventListener('pointercancel', release);
+    // a tap near either side turns the page, like the margins in Books
+    const tapTurn = (x, target) => {
+      if (target && target.closest && target.closest('button, a')) return;
+      if (String(window.getSelection ? window.getSelection() : '')) return;
+      const r = stage.getBoundingClientRect(), fx = (x - r.left) / r.width;
+      if (fx > 0.86) turn(1); else if (fx < 0.14) turn(-1);
+    };
+    let g = null;
+    const begin = (x, y, time, id, mouse) => {
+      g = { id, mouse, x0: x, y0: y, axis: !mouse && nearEdge(x) ? 'x' : null, live: false, busy: !!curlState, vx: 0, lx: x, lt: time };
+    };
+    // returns true while the gesture belongs to the page turn, so the caller can stop scrolling
+    const move = (x, y, time) => {
+      const dx = x - g.x0, dy = y - g.y0;
+      if (g.busy) return true;                                       // the last turn is still settling
+      if (!g.axis) {
+        if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return false;
+        g.axis = Math.abs(dx) > Math.abs(dy) * 0.9 ? 'x' : 'y';
+      }
+      if (g.axis === 'y') return false;                              // vertical: the page scrolls
+      if (!g.live && g.axis === 'x' && !reduce) {
+        if (Math.abs(dx) < 10) return true;
+        if (!curlBegin(dx < 0 ? 1 : -1)) { g.axis = 'end'; return true; }  // first or last chapter
+        g.live = true;
+        readerEl.classList.add('curling');
+      }
+      if (g.live) {
+        g.vx = (x - g.lx) / Math.max(1, time - g.lt);
+        g.lx = x;
+        g.lt = time;
+        curlFrame(curlState, progressOf(curlState, dx));
+      }
+      return true;
+    };
+    const end = (x, y, cancelled, target) => {
+      const d = g;
+      g = null;
+      readerEl.classList.remove('curling');
+      if (d.live) { settle(cancelled, d.vx); return; }
+      if (d.busy || cancelled) return;
+      const dx = x - d.x0, dy = y - d.y0;
+      if (d.axis === 'x' && Math.abs(dx) > 40) { turn(dx < 0 ? 1 : -1); return; }  // with reduced motion, a swipe still turns
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) tapTurn(x, target);
+    };
+
+    // touch
+    const byId = (list, id) => { for (let k = 0; k < list.length; k++) if (list[k].identifier === id) return list[k]; return null; };
+    readerEl.addEventListener('touchstart', e => {
+      // a touch that starts at the screen edge would begin Safari's back/forward swipe; keep it for the page
+      const t = e.changedTouches[0];
+      if (nearEdge(t.clientX) && e.cancelable && !e.target.closest('button, a, input')) e.preventDefault();
+    }, { passive: false });
+    // Follow each touch on the element it started on. A turn swaps the page content under the
+    // finger, and an element that has left the page no longer passes touch events up to the stage.
+    let held = null;
+    const release = () => {
+      if (!held) return;
+      held.removeEventListener('touchmove', touchMove);
+      held.removeEventListener('touchend', touchEnd);
+      held.removeEventListener('touchcancel', touchEnd);
+      held = null;
+    };
+    function touchMove(e) {
+      if (!g || g.mouse) return;
+      const t = byId(e.changedTouches, g.id);
+      if (t && move(t.clientX, t.clientY, e.timeStamp) && e.cancelable) e.preventDefault();
+    }
+    function touchEnd(e) {
+      if (!g || g.mouse) return;
+      const t = byId(e.changedTouches, g.id);
+      if (!t) return;
+      release();
+      end(t.clientX, t.clientY, e.type === 'touchcancel', e.target);
+    }
+    stage.addEventListener('touchstart', e => {
+      release();
+      if (e.touches.length > 1) {                                    // a second finger: stop and let the browser zoom
+        if (g && g.live) settle(true, 0);
+        g = null;
+        readerEl.classList.remove('curling');
+        return;
+      }
+      if (g && g.live) settle(true, 0);                              // a touch that never ended: let that page fall back
+      const t = e.changedTouches[0];
+      begin(t.clientX, t.clientY, e.timeStamp, t.identifier, false);
+      held = e.target;
+      held.addEventListener('touchmove', touchMove, { passive: false });
+      held.addEventListener('touchend', touchEnd);
+      held.addEventListener('touchcancel', touchEnd);
+    }, { passive: false });
+
+    // mouse and pen
+    stage.addEventListener('pointerdown', e => {
+      if ((e.pointerType === 'touch' && hasTouch) || e.button !== 0) return;
+      begin(e.clientX, e.clientY, e.timeStamp, e.pointerId, true);
+    });
+    stage.addEventListener('pointermove', e => {
+      if (!g || !g.mouse || e.pointerId !== g.id) return;
+      const wasLive = g.live;
+      move(e.clientX, e.clientY, e.timeStamp);
+      if (!wasLive && g.live) { try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ } }
+    });
+    const pointerEnd = e => {
+      if (!g || !g.mouse || e.pointerId !== g.id) return;
+      end(e.clientX, e.clientY, e.type === 'pointercancel', e.target);
+    };
+    stage.addEventListener('pointerup', pointerEnd);
+    stage.addEventListener('pointercancel', pointerEnd);
   })();
   aaBtn.addEventListener('click', () => {
     aaPop.hidden = !aaPop.hidden;
