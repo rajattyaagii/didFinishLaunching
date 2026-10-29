@@ -51,6 +51,11 @@
     catch (e) { finish(false); }
   }));
 
+  /* ---------- keyboard or pointer: decides whether focus rings show ---------- */
+  let usingKeyboard = false;
+  document.addEventListener('keydown', e => { if (!e.metaKey && !e.ctrlKey && !e.altKey) usingKeyboard = true; }, true);
+  document.addEventListener('pointerdown', () => { usingKeyboard = false; }, true);
+
   /* ---------- modal manager ---------- */
   const stack = [];
   function modal(el, opts = {}) {
@@ -67,7 +72,9 @@
         document.documentElement.classList.add('modal-open');
         requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
         const f = focusSel ? el.querySelector(focusSel) : el.querySelector('[data-close], button');
-        setTimeout(() => f && f.focus({ preventScroll: true }), 40);
+        // after a click or tap, focus the dialog itself so no control shows a focus ring; after keys, the control
+        if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+        setTimeout(() => (usingKeyboard && f ? f : el).focus({ preventScroll: true }), 40);
       },
       close() {
         const i = stack.indexOf(api);
@@ -208,7 +215,7 @@
   const reduceTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
   const uaBrands = (navigator.userAgentData && navigator.userAgentData.brands) || [];
   const canRefract = !reduceTransparency && uaBrands.some(b => /Chrom/i.test(b.brand));
-  const LENS = '.dock, .dock-ind, .toast, .st-nav, .lib .appbar, .rd-bar, .rd-foot, .pl-controls, .ap-card-bar, .btn-info, .rundown';
+  const LENS = '.dock, .toast, .st-nav, .lib .appbar, .rd-bar, .rd-foot, .pl-controls, .ap-card-bar, .btn-info, .rundown';
   const SHEEN = '.dock, .toast, .chip, .lib .appbar, .lib-search, .pill, .lib-hidden, .st-nav, .btn-info, .dl-btn, .std-x, .seg, .lang, .rundown, .ap-card-bar, .ap-get, .aps-x, .rd-bar, .rd-foot, .rd-aa, .rd-nav, .pl-controls, .pl-top .pl-btn, .pl-next';
   const lgDefs = $('#lgDefs');
   const lensCache = new Map();
@@ -577,7 +584,8 @@
   function applyReaderPrefs() {
     readerEl.dataset.theme = rTheme;
     readerEl.style.setProperty('--rd-size', rSize + 'px');
-    $$('[data-rtheme]', readerEl).forEach(b => b.classList.toggle('on', b.dataset.rtheme === rTheme));
+    $$('[data-rtheme]', readerEl).forEach(b => { b.classList.toggle('on', b.dataset.rtheme === rTheme); b.setAttribute('aria-pressed', String(b.dataset.rtheme === rTheme)); });
+    $('.rd-seg-pick', readerEl).style.setProperty('--i', Math.max(0, ['paper', 'sepia', 'night'].indexOf(rTheme)));
   }
   applyReaderPrefs();
 
@@ -952,6 +960,11 @@
   aaBtn.addEventListener('click', () => {
     aaPop.hidden = !aaPop.hidden;
     aaBtn.setAttribute('aria-expanded', String(!aaPop.hidden));
+  });
+  readerEl.addEventListener('pointerdown', e => {
+    if (aaPop.hidden || aaPop.contains(e.target) || aaBtn.contains(e.target)) return;
+    aaPop.hidden = true;
+    aaBtn.setAttribute('aria-expanded', 'false');
   });
   aaPop.addEventListener('click', e => {
     const t = e.target.closest('button');
@@ -1329,7 +1342,7 @@
     offline(box) {
       const EV = ['app_open', 'play_start · Downloads', 'seek · 00:12:40', 'pause', 'play_resume', 'download_complete', 'play_end'];
       let online = false, k = 0;
-      box.innerHTML = '<div class="seg" role="group" aria-label="Connection"><button type="button" data-net="on">Online</button><button type="button" data-net="off" class="on">Offline</button></div><ul class="evt-log" aria-live="off"></ul>';
+      box.innerHTML = '<div class="seg" role="group" aria-label="Connection" style="--i:1"><button type="button" data-net="on" aria-pressed="false">Online</button><button type="button" data-net="off" class="on" aria-pressed="true">Offline</button></div><ul class="evt-log" aria-live="off"></ul>';
       const log = $('.evt-log', box);
       const add = () => {
         const li = document.createElement('li');
@@ -1342,7 +1355,8 @@
         const b = e.target.closest('[data-net]');
         if (!b) return;
         online = b.dataset.net === 'on';
-        $$('[data-net]', box).forEach(x => x.classList.toggle('on', x === b));
+        $$('[data-net]', box).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+        $('.seg', box).style.setProperty('--i', online ? 0 : 1);
         if (online) $$('.st.q', log).forEach((s, n) => setTimeout(() => { s.className = 'st s'; s.textContent = 'sent'; }, n * 160));
       });
       const iv = setInterval(add, 1500);
@@ -1391,7 +1405,7 @@
     const f = FEATURES[i];
     if (demoCleanup) demoCleanup();
     $('#stDialog').innerHTML =
-      `<div class="std-art" style="${artVars(f)}"><button class="std-x" type="button" data-close aria-label="Close">×</button>` +
+      `<div class="std-art" style="${artVars(f)}"><button class="std-x" type="button" data-close aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>` +
       `<span class="pico" aria-hidden="true">${ICONS[f.icon]}</span><h3 id="stdTitle">${esc(f.title)}</h3>` +
       `<div class="bb-actions"><button class="btn-play" type="button" data-play="${i}">${PLAY_SVG}Play</button></div></div>` +
       `<div class="std-body"><div><p class="std-meta"><span class="shipped">SHIPPED</span>2021–2024 <span class="dot">·</span> iOS <span class="dot">·</span> ${f.tagline}</p>` +
@@ -1683,6 +1697,30 @@
       points: ['Rubric studio for writing scoring criteria', 'WYSIWYG dashboard builder', 'Synced transcript with real audio playback', 'Live call monitor and pipeline controls', 'Tenant auth and workspaces', 'Batch processing with Gemini'],
       stack: ['React', 'TypeScript', 'Vite', 'Java', 'Quarkus', 'Gemini']
     },
+    m0: {
+      name: 'HoneyDoo', icon: 'honey', sub: 'Turn chores into treats', platform: 'iOS', category: 'Lifestyle', year: '2025',
+      desc: ['A shared space where couples split everyday tasks and chores. One partner creates the space and the other joins with a code.', 'Built with offline indicators, sync status, clear error states and notifications.'],
+      points: ['Shared tasks and chores for two', 'Join your partner with a code', 'Offline indicators and sync status', 'Notifications'],
+      stack: ['SwiftUI', 'Supabase', 'UserNotifications']
+    },
+    m1: {
+      name: 'BioDex', icon: 'biodex', sub: 'A field guide that talks back', platform: 'iOS · Flutter', category: 'Education', year: '2026',
+      desc: ['Point the camera at a creature and BioDex identifies it with Gemini, then reads its entry aloud, like the handheld encyclopedias from the games.', 'Built first in SwiftUI with an 8-bit loading animation, then ported to Flutter.'],
+      points: ['Camera identification with Gemini', 'Spoken entries with text-to-speech', 'Retro 8-bit loading animation', 'SwiftUI app and a Flutter port'],
+      stack: ['SwiftUI', 'AVFoundation', 'Flutter', 'Gemini', 'Supabase']
+    },
+    m2: {
+      name: 'Splitty', icon: 'splitty', sub: 'Split group expenses without the awkward maths', platform: 'Android · iOS', category: 'Finance', year: '2025',
+      desc: ['A Flutter expense-splitting app for groups.', 'Supports equal, exact, percentage and itemized splits, settlements, CSV import, statistics with monthly trends, and dark mode.'],
+      points: ['Equal, exact, percentage and itemized splits', 'Group and personal statistics with trend charts', 'CSV import, including settlements', 'Per-group currencies and dark mode'],
+      stack: ['Flutter', 'BLoC', 'Firebase', 'Hive', 'go_router']
+    },
+    m3: {
+      name: 'SpendLens', icon: 'spend', sub: 'Make sense of your card statements', platform: 'Web · Mobile', category: 'Finance', year: '2026',
+      desc: ['Upload credit-card statements and SpendLens reads the PDFs with Gemini, categorizes every transaction and shows where the money goes.', 'Includes category trends, transaction filters, credit-card views and duplicate detection.'],
+      points: ['Statement PDF and CSV parsing with Gemini', 'Category trends over time', 'Duplicate detection', 'Web app and a mobile app in one repo'],
+      stack: ['React', 'TypeScript', 'Vite', 'Supabase', 'Gemini']
+    },
     e0: {
       name: 'SwiftUI Portfolio App', icon: 'folio', sub: 'Portfolio app with user authentication', platform: 'iOS · macOS', category: 'Early work', year: '2021',
       desc: ['A portfolio app written in SwiftUI with user authentication, with iOS and macOS targets.'], stack: ['SwiftUI'],
@@ -1720,13 +1758,14 @@
       ? `<a class="ap-get" href="${p.repo}" target="_blank" rel="noopener" aria-label="View ${p.name} on GitHub">VIEW</a>`
       : `<button class="ap-get" type="button" data-p="${k}" aria-label="${p.name}: private repo, show details">${LOCK}VIEW</button>`;
     return `<li class="ap-row"><button class="ap-row-btn" type="button" data-p="${k}">${appIcon(p.icon)}` +
-      `<span><b>${p.name}</b><span class="sub">${p.sub}</span><span class="stk">${p.platform} · ${p.stack.slice(0, 3).join(', ')}</span></span></button>${btn}</li>`;
+      `<span><b>${p.name}</b><span class="sub">${p.sub}</span><span class="stk">${p.platform} · ${p.stack.filter(s => !p.platform.includes(s)).slice(0, 3).join(', ')}</span></span></button>${btn}</li>`;
   };
+  $('#apMore').innerHTML = ['m0', 'm1', 'm2', 'm3'].map(row).join('');
   $('#apEarly').innerHTML = ['e0', 'e1', 'e2', 'e3'].map(row).join('');
 
   const apM = modal($('#apWrap'));
   function sheetHTML(p) {
-    return `<button class="aps-x${p.art ? '' : ' on-light'}" type="button" data-close aria-label="Close">×</button>` +
+    return `<button class="aps-x${p.art ? '' : ' on-light'}" type="button" data-close aria-label="Close"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>` +
       (p.art ? `<div class="aps-art"><span class="art ${p.art}" aria-hidden="true">${ART[p.art]()}</span></div>` : '') +
       `<div class="aps-body"><div class="aps-app">${appIcon(p.icon)}<div><h3 id="apsTitle">${p.name}</h3><p>${p.sub}</p>` +
       (p.repo ? `<a class="ap-get" href="${p.repo}" target="_blank" rel="noopener">VIEW ON GITHUB</a>` : '<span class="ap-get locked">PRIVATE REPO</span>') +

@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Bebas+Neue&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Caveat:wght@500;700&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400;1,7..72,600&family=Oswald:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="styles.css?v=a6aaff4b12">
+<link rel="stylesheet" href="styles.css?v=a16de2cfb6">
 </head>
 <body>
 <a class="skip" href="#google">Skip to experience</a>
@@ -228,6 +228,10 @@
     </header>
     <div class="ap-featured" id="apFeatured"></div>
     <div class="ap-block">
+      <div class="ap-block-head"><h3>More apps by Rajat</h3><span>Private repos · demos on request</span></div>
+      <ul class="ap-list" id="apMore"></ul>
+    </div>
+    <div class="ap-block">
       <div class="ap-block-head"><h3>Early work</h3><span>Public on GitHub</span></div>
       <ul class="ap-list" id="apEarly"></ul>
     </div>
@@ -283,21 +287,21 @@
 <!-- ============ READER ============ -->
 <div class="reader" id="reader" role="dialog" aria-modal="true" aria-labelledby="rdBarTitle" data-theme="paper" hidden>
   <div class="rd-bar">
-    <button class="rd-btn" type="button" data-close>‹ Library</button>
+    <button class="rd-btn rd-back" type="button" data-close><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg><span>Library</span></button>
     <p class="rd-bar-title" id="rdBarTitle">Book</p>
     <div class="rd-bar-r">
       <button class="rd-btn" type="button" id="rdAa" aria-expanded="false" aria-controls="rdAaPop">Aa</button>
-      <button class="rd-btn rd-x" type="button" data-close aria-label="Close reader">×</button>
+      <button class="rd-btn rd-x" type="button" data-close aria-label="Close reader"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
     </div>
-    <div class="rd-aa" id="rdAaPop" hidden>
-      <p>Theme</p>
-      <div class="rd-seg" role="group" aria-label="Reader theme">
-        <button type="button" data-rtheme="paper">Paper</button><button type="button" data-rtheme="sepia">Sepia</button><button type="button" data-rtheme="night">Night</button>
-      </div>
-      <p>Text size</p>
-      <div class="rd-seg" role="group" aria-label="Text size">
-        <button type="button" data-rsize="-1" aria-label="Smaller text">A−</button><button type="button" data-rsize="1" aria-label="Larger text">A+</button>
-      </div>
+  </div>
+  <div class="rd-aa" id="rdAaPop" hidden>
+    <p>Theme</p>
+    <div class="rd-seg rd-seg-pick" role="group" aria-label="Reader theme">
+      <button type="button" data-rtheme="paper">Paper</button><button type="button" data-rtheme="sepia">Sepia</button><button type="button" data-rtheme="night">Night</button>
+    </div>
+    <p>Text size</p>
+    <div class="rd-seg" role="group" aria-label="Text size">
+      <button type="button" data-rsize="-1" aria-label="Smaller text">A−</button><button type="button" data-rsize="1" aria-label="Larger text">A+</button>
     </div>
   </div>
   <div class="rd-stage" id="rdStage">
@@ -307,9 +311,9 @@
     </div>
   </div>
   <div class="rd-foot">
-    <button class="rd-nav" type="button" id="rdPrev" aria-label="Previous book">‹</button>
+    <button class="rd-nav" type="button" id="rdPrev" aria-label="Previous book"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg></button>
     <div class="rd-prog"><span class="rd-prog-bar"><i id="rdProg"></i></span><span class="rd-prog-txt" id="rdProgTxt">Chapter 1 of 9</span></div>
-    <button class="rd-nav" type="button" id="rdNext" aria-label="Next book">›</button>
+    <button class="rd-nav" type="button" id="rdNext" aria-label="Next book"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg></button>
   </div>
 </div>
 
@@ -333,7 +337,7 @@
     </div>
   </div>
   <div class="pl-top">
-    <button type="button" class="pl-btn" data-close aria-label="Close player">‹</button>
+    <button type="button" class="pl-btn pl-back" data-close aria-label="Close player"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg></button>
     <p id="plTopTitle"></p>
   </div>
   <div class="pl-controls">
@@ -358,6 +362,6 @@
 
 <svg class="lg-defs" aria-hidden="true" focusable="false"><defs id="lgDefs"></defs></svg>
 
-<script src="app.js?v=62d469bb08"></script>
+<script src="app.js?v=3aff3c4192"></script>
 </body>
 </html>
