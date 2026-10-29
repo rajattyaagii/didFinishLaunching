@@ -16,6 +16,12 @@
     new IntersectionObserver(es => es.forEach(e => cb(e.isIntersecting)), { rootMargin: margin }).observe(el);
   };
 
+  /* ---------- motion ---------- */
+  const root = document.documentElement;
+  const EASE_OUT = 'cubic-bezier(.22, 1, .36, 1)';
+  const EASE_IN = 'cubic-bezier(.4, 0, 1, 1)';
+  const SPRING = css('--spring') || EASE_OUT;
+
   /* ---------- toast ---------- */
   const toastEl = $('#toast');
   let toastT = 0;
@@ -69,7 +75,7 @@
         stack.splice(i, 1);
         el.classList.remove('open');
         if (opts.onClose) opts.onClose();
-        setTimeout(() => { if (!el.classList.contains('open')) el.hidden = true; }, reduce ? 0 : 300);
+        setTimeout(() => { if (!el.classList.contains('open')) el.hidden = true; }, reduce ? 0 : 260);
         if (!stack.length) document.documentElement.classList.remove('modal-open');
         if (prev && prev.focus) prev.focus({ preventScroll: true });
       }
@@ -106,17 +112,223 @@
   });
 
   /* =========================================================
-     DOCK: highlight the section in view
+     DOCK: magnifies like the macOS dock; an indicator glides to
+     the section in view (a glass lens in Liquid Glass mode)
      ========================================================= */
-  const dockLinks = $$('.dock a');
+  const dock = $('#dock');
+  const dockInd = $('#dockInd');
+  const dockLinks = $$('#dock > a');
+  const dockItems = $$('#dock > a, #dock > .dock-glass');
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const DARK_SECTIONS = new Set(['google', 'hotstar', 'ttn', 'credits']);
+  const mag = dockItems.map(() => 1), magT = dockItems.map(() => 1);
+  const indPos = { x: 0, y: 0, w: 4, h: 4, ready: false };
+  let activeLink = dockLinks[0], hoverItem = null, restOffsets = null, dockRaf = 0;
+  if (finePointer && !reduce) dock.classList.add('mag');
+
+  function indTarget() {
+    const glass = root.classList.contains('glass');
+    const it = glass && hoverItem ? hoverItem : activeLink;
+    const dr = dock.getBoundingClientRect(), r = it.getBoundingClientRect();
+    const ox = dr.left + dock.clientLeft, oy = dr.top + dock.clientTop;
+    if (glass) return { x: r.left - ox - 5, y: r.top - oy - 5, w: r.width + 10, h: r.height + 10 };
+    return { x: r.left - ox + r.width / 2 - 2, y: r.bottom - oy + 3, w: 4, h: 4 };
+  }
+  function dockFrame() {
+    let busy = false;
+    const km = reduce ? 1 : 0.24, ki = reduce ? 1 : 0.2;
+    dockItems.forEach((it, i) => {
+      const d = magT[i] - mag[i];
+      if (Math.abs(d) > 0.002) { mag[i] += d * km; busy = true; } else mag[i] = magT[i];
+      it.style.setProperty('--m', mag[i].toFixed(3));
+    });
+    const t = indTarget();
+    if (!indPos.ready) { Object.assign(indPos, t); indPos.ready = true; }
+    for (const key of ['x', 'y', 'w', 'h']) {
+      const d = t[key] - indPos[key];
+      if (Math.abs(d) > 0.15) { indPos[key] += d * ki; busy = true; } else indPos[key] = t[key];
+    }
+    dockInd.style.transform = `translate3d(${indPos.x.toFixed(2)}px, ${indPos.y.toFixed(2)}px, 0)`;
+    dockInd.style.width = indPos.w.toFixed(2) + 'px';
+    dockInd.style.height = indPos.h.toFixed(2) + 'px';
+    dockRaf = busy ? requestAnimationFrame(dockFrame) : 0;
+  }
+  const kickDock = () => { if (!dockRaf) dockRaf = requestAnimationFrame(dockFrame); };
+  function measureRest() {
+    const dr = dock.getBoundingClientRect(), cx = dr.left + dr.width / 2;
+    restOffsets = dockItems.map(it => { const r = it.getBoundingClientRect(); return r.left + r.width / 2 - cx; });
+  }
+  dock.addEventListener('pointerenter', e => {
+    if (e.pointerType === 'mouse' && mag.every(m => Math.abs(m - 1) < 0.01)) measureRest();
+  });
+  dock.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    hoverItem = e.target.closest('#dock > a, #dock > .dock-glass');
+    if (finePointer && !reduce) {
+      if (!restOffsets) measureRest();
+      const dr = dock.getBoundingClientRect();
+      const px = e.clientX - (dr.left + dr.width / 2);
+      dockItems.forEach((it, i) => {
+        const f = Math.max(0, 1 - Math.abs(px - restOffsets[i]) / 150);
+        magT[i] = 1 + 0.4 * f * f * (3 - 2 * f);
+      });
+    }
+    kickDock();
+  });
+  dock.addEventListener('pointerleave', () => { hoverItem = null; magT.fill(1); kickDock(); });
   if ('IntersectionObserver' in window) {
     const io = new IntersectionObserver(entries => {
       entries.forEach(en => {
-        if (en.isIntersecting) dockLinks.forEach(a => a.classList.toggle('active', a.dataset.sec === en.target.id));
+        if (!en.isIntersecting) return;
+        const id = en.target.id;
+        dockLinks.forEach(a => {
+          const on = a.dataset.sec === id;
+          a.classList.toggle('active', on);
+          if (on) { activeLink = a; a.setAttribute('aria-current', 'true'); } else a.removeAttribute('aria-current');
+        });
+        const surface = DARK_SECTIONS.has(id) ? 'dark' : 'page';
+        dock.dataset.surface = surface;
+        toastEl.dataset.surface = surface;
+        kickDock();
       });
     }, { rootMargin: '-45% 0px -50% 0px' });
     $$('main > section').forEach(s => io.observe(s));
   }
+  window.addEventListener('resize', () => { restOffsets = null; kickDock(); });
+  if (document.fonts) document.fonts.ready.then(kickDock);
+
+  /* =========================================================
+     LIQUID GLASS: an opt-in material, switched from the dock.
+     Everywhere: translucent fill, rim light, pointer sheen.
+     In Chromium: real refraction through an SVG displacement map.
+     ========================================================= */
+  const glassBtn = $('#glassToggle');
+  const glassTip = $('#glassTip');
+  const reduceTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+  const uaBrands = (navigator.userAgentData && navigator.userAgentData.brands) || [];
+  const canRefract = !reduceTransparency && uaBrands.some(b => /Chrom/i.test(b.brand));
+  const LENS = '.dock, .dock-ind, .toast, .st-nav, .lib .appbar, .rd-bar, .rd-foot, .pl-controls, .ap-card-bar, .btn-info, .rundown';
+  const SHEEN = '.dock, .toast, .chip, .lib .appbar, .lib-search, .pill, .lib-hidden, .st-nav, .btn-info, .dl-btn, .std-x, .seg, .lang, .rundown, .ap-card-bar, .ap-get, .aps-x, .rd-bar, .rd-foot, .rd-aa, .rd-nav, .pl-controls, .pl-top .pl-btn, .pl-next';
+  const lgDefs = $('#lgDefs');
+  const lensCache = new Map();
+  let glassOn = false, lensRO = null;
+
+  // Displacement map for a rounded rect: pixels in the rim band sample from further
+  // inside, so the backdrop bends at the edges like light through thick glass.
+  function lensMap(w, h, r, bezel) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(w, h), d = img.data;
+    const hw = w / 2, hh = h / 2;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const px = x + 0.5 - hw, py = y + 0.5 - hh;
+        const qx = Math.abs(px) - (hw - r), qy = Math.abs(py) - (hh - r);
+        const inside = -(Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r);
+        let nx = 0, ny = 0, m = 0;
+        if (inside > 0 && inside < bezel) {
+          if (qx > 0 && qy > 0) { const l = Math.hypot(qx, qy) || 1; nx = (qx / l) * Math.sign(px); ny = (qy / l) * Math.sign(py); }
+          else if (qx > qy) nx = Math.sign(px);
+          else ny = Math.sign(py);
+          const t = 1 - inside / bezel;
+          m = t * t;
+        }
+        const i = (y * w + x) * 4;
+        d[i] = 128 - nx * m * 127;
+        d[i + 1] = 128 - ny * m * 127;
+        d[i + 2] = 128;
+        d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c.toDataURL();
+  }
+  function lensFilter(w, h, r, thin) {
+    const W = Math.max(4, Math.round(w / 2) * 2), H = Math.max(4, Math.round(h / 2) * 2);
+    const R = Math.round(Math.min(r, W / 2, H / 2));
+    const key = W + 'x' + H + 'x' + R + (thin ? 't' : '');
+    if (lensCache.has(key)) return lensCache.get(key);
+    const id = 'lg' + lensCache.size;
+    // a thin rim keeps whatever sits under the dock lens crisp in the middle
+    const bezel = thin ? 7 : Math.max(6, Math.min(24, Math.min(W, H) * 0.32));
+    lgDefs.insertAdjacentHTML('beforeend',
+      `<filter id="${id}" x="0" y="0" width="${W}" height="${H}" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">` +
+      '<feGaussianBlur in="SourceGraphic" stdDeviation="0.5" result="s"/>' +
+      `<feImage href="${lensMap(W, H, R, bezel)}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="none" result="m"/>` +
+      `<feDisplacementMap in="s" in2="m" scale="${Math.round(bezel * 2.2)}" xChannelSelector="R" yChannelSelector="G"/></filter>`);
+    lensCache.set(key, id);
+    return id;
+  }
+  function lens(el) {
+    if (!glassOn || !canRefract) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    if (!w || !h) return;
+    const isLens = el === dockInd;
+    const id = lensFilter(w, h, parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, isLens);
+    if (el._lens === id) return;
+    el._lens = id;
+    // bars get more frost so their labels stay readable; small controls stay clearer
+    const blur = isLens ? 0.4 : el.matches('.st-nav, .lib .appbar, .rd-bar, .rd-foot, .pl-controls, .rundown') ? 10 : el === dock ? 6 : 4;
+    el.style.backdropFilter = `url(#${id}) blur(${blur}px) saturate(1.9) brightness(1.06)`;
+  }
+  function lensAll() {
+    if (!canRefract || !glassOn) return;
+    if (!lensRO && 'ResizeObserver' in window) lensRO = new ResizeObserver(es => es.forEach(en => lens(en.target)));
+    $$(LENS).forEach(el => { lens(el); if (lensRO) lensRO.observe(el); });
+  }
+  function unlensAll() {
+    if (lensRO) lensRO.disconnect();
+    $$(LENS).forEach(el => { el.style.backdropFilter = ''; el._lens = null; });
+  }
+  function setGlass(on) {
+    glassOn = on;
+    root.classList.toggle('glass', on);
+    glassBtn.setAttribute('aria-pressed', String(on));
+    glassTip.textContent = 'Liquid Glass · ' + (on ? 'On' : 'Off');
+    if (on) requestAnimationFrame(lensAll); else unlensAll();
+    restOffsets = null;
+    kickDock();
+  }
+  function toggleGlass() {
+    const on = !glassOn;
+    store.set('glass', on);
+    glassBtn.classList.remove('hint');
+    const done = () => toast(on ? 'Liquid Glass is on. Tap the droplet again to switch back.' : 'Liquid Glass is off.');
+    if (reduce || !document.startViewTransition) { setGlass(on); done(); return; }
+    const r = glassBtn.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const end = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const vt = document.startViewTransition(() => setGlass(on));
+    vt.ready.then(() => {
+      root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${end}px at ${x}px ${y}px)`] },
+        { duration: 820, easing: EASE_OUT, pseudoElement: '::view-transition-new(root)' });
+    }).catch(() => {});
+    vt.finished.then(done, done);
+  }
+  glassBtn.addEventListener('click', toggleGlass);
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'g' || e.key === 'G') && !e.metaKey && !e.ctrlKey && !e.altKey && !stack.length &&
+      !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) toggleGlass();
+  });
+  // the sheen on a glass surface follows the pointer, like light catching it
+  let sheenEl = null, sheenEv = null, sheenRaf = 0;
+  document.addEventListener('pointermove', e => {
+    if (!glassOn || e.pointerType !== 'mouse') return;
+    sheenEv = e;
+    if (sheenRaf) return;
+    sheenRaf = requestAnimationFrame(() => {
+      sheenRaf = 0;
+      const t = sheenEv.target;
+      const el = t && t.closest ? t.closest(SHEEN) : null;
+      if (sheenEl && sheenEl !== el) { sheenEl.style.removeProperty('--mx'); sheenEl.style.removeProperty('--my'); }
+      sheenEl = el;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', ((sheenEv.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+      el.style.setProperty('--my', ((sheenEv.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+    });
+  }, { passive: true });
 
   /* =========================================================
      LIBRARY (Google · Play Books)
@@ -226,18 +438,39 @@
       (b.sun ? '<span class="sun" aria-hidden="true"></span>' : '') +
       `<span class="spine-title" aria-hidden="true">${b.spine}</span>` +
       '<span class="spine-foot" aria-hidden="true"></span></button>';
-    slot.querySelector('button').addEventListener('click', () => openReader(i));
+    const bookBtn = slot.querySelector('button');
+    bookBtn.addEventListener('click', () => openReader(i, bookBtn));
     booksEl.appendChild(slot);
   });
 
-  /* scale the shelf so it always fits its column */
+  /* scale the shelf to its column, and let it turn gently toward the pointer */
   const scene = $('.shelf-scene');
+  const shelf = $('#shelf');
+  const narrowMQ = window.matchMedia('(max-width: 760px)');
+  let swayRaf = 0, swayVisible = false, swayY = 0, swayPointer = null;
+  const canSway = () => !reduce && !narrowMQ.matches;
+  function swayFrame(now) {
+    const target = swayPointer === null ? Math.sin(now / 3400) * 9 : swayPointer;
+    swayY += (target - swayY) * 0.045;
+    shelf.style.transform = `rotateX(7deg) rotateY(${swayY.toFixed(2)}deg)`;
+    swayRaf = swayVisible && canSway() ? requestAnimationFrame(swayFrame) : 0;
+  }
   function fitShelf() {
-    const narrow = window.matchMedia('(max-width: 760px)').matches;
-    const k = Math.min(1, scene.clientWidth / (narrow ? 680 : 780));
+    // leave room for the plank and the 3D tilt, which both reach past the books
+    const k = Math.min(1, (scene.clientWidth - 24) / (narrowMQ.matches ? 720 : 860));
     scene.style.setProperty('--k', k.toFixed(3));
     scene.style.setProperty('--k2', Math.max(0.66, Math.min(1, k * 1.4)).toFixed(3));
+    scene.classList.toggle('tight', k < 0.92);
+    if (!canSway()) shelf.style.transform = '';
+    else if (swayVisible && !swayRaf) swayRaf = requestAnimationFrame(swayFrame);
   }
+  scene.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    const r = scene.getBoundingClientRect();
+    swayPointer = ((e.clientX - r.left) / r.width - 0.5) * 16;
+  });
+  scene.addEventListener('pointerleave', () => { swayPointer = null; });
+  onVisible(scene, v => { swayVisible = v; if (v && !swayRaf && canSway()) swayRaf = requestAnimationFrame(swayFrame); });
   fitShelf();
   window.addEventListener('resize', fitShelf);
 
@@ -255,31 +488,47 @@
     const hay = [b.title, b.sub, b.body.join(' '), b.tags.join(' '), b.cats.map(c => CATS[c]).join(' ')].map(plain).join(' ').toLowerCase();
     return inCat && hay.includes(q);
   }
+  // FLIP: measure, change the layout, then slide books from where they were.
+  // Only transforms animate, so neighbours glide instead of reflowing frame by frame.
+  function flipShelf(mutate) {
+    const movers = $$('.slot:not(.gone), .bookend', booksEl);
+    const first = movers.map(el => el.offsetLeft);
+    mutate();
+    if (reduce) return;
+    movers.forEach((el, k) => {
+      if (el.classList.contains('gone')) return;
+      const dx = first[k] - el.offsetLeft;
+      if (Math.abs(dx) < 0.5) return;
+      el.animate([{ transform: `translateX(${dx.toFixed(1)}px)` }, { transform: 'translateX(0)' }], { duration: 780, easing: SPRING });
+    });
+  }
+  let collapseT = 0;
   function applyFilter() {
-    let shown = 0, hidden = 0;
-    $$('.slot', booksEl).forEach((slot, i) => {
+    const slots = $$('.slot', booksEl);
+    const toShow = [], toHide = [];
+    let shown = 0;
+    slots.forEach((slot, i) => {
       const ok = bookMatches(BOOKS[i]);
       const isOut = slot.classList.contains('out');
-      clearTimeout(slot._t);
-      if (ok) {
-        shown++;
-        if (isOut) {
-          slot.classList.remove('out', 'gone');
-          slot.classList.add('in');
-          slot._t = setTimeout(() => slot.classList.remove('in'), 800);
-        }
-      } else {
-        hidden++;
-        if (!isOut) {
-          slot.classList.remove('in');
-          slot.classList.add('out');
-          slot._t = setTimeout(() => slot.classList.add('gone'), reduce ? 0 : 620);
-        } else {
-          slot.classList.add('gone');
-        }
-      }
+      if (ok) { shown++; if (isOut) toShow.push(slot); } else if (!isOut) toHide.push(slot);
       slot.querySelector('button').tabIndex = ok ? 0 : -1;
     });
+    if (toShow.length) {
+      flipShelf(() => toShow.forEach(s => { clearTimeout(s._t); s.classList.remove('out', 'gone', 'away'); s.style.left = ''; s.classList.add('in'); }));
+      toShow.forEach(s => { s._t = setTimeout(() => s.classList.remove('in'), 900); });
+    }
+    toHide.forEach(s => { clearTimeout(s._t); s.classList.remove('in'); s.classList.add('out'); });
+    if (toHide.length) {
+      clearTimeout(collapseT);
+      collapseT = setTimeout(() => {
+        const pending = $$('.slot.out:not(.gone)', booksEl);
+        if (!pending.length) return;
+        const lefts = pending.map(s => s.offsetLeft);
+        flipShelf(() => pending.forEach((s, k) => { s.style.left = lefts[k] + 'px'; s.classList.add('gone'); }));
+        pending.forEach(s => { s._t = setTimeout(() => { if (s.classList.contains('out')) s.classList.add('away'); }, 700); });
+      }, reduce ? 0 : 340);
+    }
+    const hidden = slots.length - shown;
     $('#libCount').textContent = shown;
     hiddenBtn.hidden = hidden === 0;
     hiddenBtn.querySelector('b').textContent = hidden;
@@ -308,7 +557,7 @@
   const readerEl = $('#reader');
   const aaPop = $('#rdAaPop');
   const aaBtn = $('#rdAa');
-  const rd = modal(readerEl, { onClose: () => { aaPop.hidden = true; aaBtn.setAttribute('aria-expanded', 'false'); } });
+  const rd = modal(readerEl, { onClose: () => { aaPop.hidden = true; aaBtn.setAttribute('aria-expanded', 'false'); if (curlState) curlEnd(true); zoomBack(); } });
   let rIdx = 0;
   let rTheme = store.get('rtheme', 'paper');
   let rSize = store.get('rsize', 18);
@@ -327,7 +576,7 @@
     else fig = `<p class="rd-stat">${b.stat}</p><p class="rd-stat-label">${b.statLabel}</p>`;
     return `<p class="rd-kicker">Chapter ${i + 1} of ${BOOKS.length}</p>` +
       `<h3 class="rd-title">${b.title.replace('&', '&amp;')}</h3><p class="rd-sub">${b.sub}</p>` +
-      `<div class="rd-orn" aria-hidden="true">❦</div>${fig}` +
+      `<div class="rd-orn" aria-hidden="true"></div>${fig}` +
       `<p class="rd-imprint">Google · Play Books for iOS</p><p class="rd-folio">${i * 2 + 1}</p>`;
   }
   function rightPage(b, i) {
@@ -336,33 +585,215 @@
       `<p class="rd-tags">${b.tags.map(t => `<span>${t.replace('&', '&amp;')}</span>`).join('')}</p>` +
       `<p class="rd-folio">${i * 2 + 2}</p>`;
   }
+  function readerChrome(i) {
+    const pct = Math.round((i + 1) / BOOKS.length * 100);
+    $('#rdBarTitle').textContent = BOOKS[i].title;
+    $('#rdProg').style.transform = `scaleX(${pct / 100})`;
+    $('#rdProgTxt').textContent = `Chapter ${i + 1} of ${BOOKS.length} · ${pct}% through`;
+    $('#rdPrev').disabled = i === 0;
+    $('#rdNext').disabled = i === BOOKS.length - 1;
+  }
   function paintReader() {
     const b = BOOKS[rIdx];
     $('#rdLeft').innerHTML = leftPage(b, rIdx);
     $('#rdRight').innerHTML = rightPage(b, rIdx);
-    $('#rdBarTitle').textContent = b.title;
-    const pct = Math.round((rIdx + 1) / BOOKS.length * 100);
-    $('#rdProg').style.width = pct + '%';
-    $('#rdProgTxt').textContent = `Chapter ${rIdx + 1} of ${BOOKS.length} · ${pct}% through`;
-    $('#rdPrev').disabled = rIdx === 0;
-    $('#rdNext').disabled = rIdx === BOOKS.length - 1;
+    readerChrome(rIdx);
     ['#rdLeft', '#rdRight', '#rdSpread'].forEach(s => { $(s).scrollTop = 0; });
   }
-  function openReader(i) {
+  // the book you tapped grows to fill the screen, then the reader fades in over it
+  function zoomCover(r, color) {
+    const c = document.createElement('div');
+    c.className = 'zoom-cover';
+    c.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;background:${color}`;
+    document.body.appendChild(c);
+    return c;
+  }
+  const fullScale = r => `translate(${-r.left}px, ${-r.top}px) scale(${innerWidth / r.width}, ${innerHeight / r.height})`;
+  function openReader(i, src) {
     rIdx = i;
     paintReader();
-    rd.open('#rdNext');
+    if (reduce || !src) { rd.open('#rdNext'); return; }
+    const r = src.getBoundingClientRect();
+    const paper = getComputedStyle(readerEl).backgroundColor;
+    const c = zoomCover(r, BOOKS[i].c);
+    c.animate([{ transform: 'none', backgroundColor: BOOKS[i].c }, { transform: fullScale(r), backgroundColor: paper }], { duration: 560, easing: EASE_OUT, fill: 'forwards' });
+    setTimeout(() => rd.open('#rdNext'), 240);
+    setTimeout(() => c.remove(), 900);
   }
+  // closing shrinks the page back into its spine on the shelf
+  function zoomBack() {
+    if (reduce) return;
+    const slot = $$('.slot', booksEl)[rIdx];
+    if (!slot || slot.classList.contains('out')) return;
+    const r = slot.querySelector('.book').getBoundingClientRect();
+    if (!r.width || r.bottom < 0 || r.top > innerHeight) return;
+    const paper = getComputedStyle(readerEl).backgroundColor;
+    const c = zoomCover(r, paper);
+    c.animate([{ transform: fullScale(r), backgroundColor: paper }, { transform: 'none', backgroundColor: BOOKS[rIdx].c }], { duration: 520, easing: EASE_OUT, fill: 'forwards' }).onfinish = () => c.remove();
+  }
+  /* ---------- iOS-style page curl ----------
+     The turning page is cut into thin vertical strips. Every frame each strip is laid
+     onto a virtual cylinder that rolls from the page edge toward the spine, so the paper
+     lifts, bends and lays over like a real page. Front faces carry the page you are
+     leaving; back faces carry the page that lands on the other side. On phones the page
+     peels off to the left and its back shows the print faintly through the paper. */
+  let curlState = null;
+  const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+  const easeOutCubic = k => 1 - Math.pow(1 - k, 3);
+  const bookPage = (b, i) => `<article class="rd-page rd-left">${leftPage(b, i)}</article><article class="rd-page rd-right">${rightPage(b, i)}</article>`;
+
+  function makeLeaf({ w, h, front, back, frontCls, backCls, mirrorBack = false, frontScroll = 0, backScroll = 0, autoHeight = false }) {
+    w = Math.round(w);
+    const sw = Math.ceil(w / Math.max(16, Math.min(44, Math.round(w / 13))));
+    const n = Math.ceil(w / sw);
+    const size = autoHeight ? `width:${w}px;min-height:${h}px` : `width:${w}px;height:${h}px`;
+    let html = '';
+    for (let k = 0; k < n; k++) {
+      const s = k * sw, len = Math.min(sw, w - s);
+      const backLeft = mirrorBack ? -s : -(w - s - len);
+      const mirror = mirrorBack ? `;transform:scaleX(-1);transform-origin:${s + len / 2}px 0` : '';
+      html += `<div class="curl-strip" data-s="${s}" data-l="${len}" style="left:${s}px;width:${len + (k < n - 1 ? 1 : 0)}px">` +
+        `<div class="curl-face"><div class="curl-page ${frontCls}" style="${size};left:${-s}px;top:${-frontScroll}px">${front}</div><i class="curl-dark"></i></div>` +
+        `<div class="curl-face back"><div class="curl-page ${backCls}" style="${size};left:${backLeft}px;top:${-backScroll}px${mirror}">${back}</div>` +
+        (mirrorBack ? '<i class="curl-paper"></i>' : '') + '<i class="curl-dark"></i><i class="curl-gloss"></i></div></div>';
+    }
+    const leaf = document.createElement('div');
+    leaf.className = 'curl-leaf';
+    leaf.style.width = w + 'px';
+    leaf.style.height = h + 'px';
+    leaf.innerHTML = html;
+    leaf._strips = $$('.curl-strip', leaf).map(el => ({
+      el, s: +el.dataset.s, l: +el.dataset.l,
+      fd: el.querySelector('.curl-dark'), bd: el.querySelector('.back .curl-dark'), gl: el.querySelector('.curl-gloss')
+    }));
+    return leaf;
+  }
+  function makeShade(side, left, top, w, h) {
+    const wrap = document.createElement('div');
+    wrap.className = 'curl-shade-wrap';
+    wrap.style.cssText = `left:${left}px;top:${top}px;width:${w}px;height:${h}px`;
+    wrap.innerHTML = `<i class="curl-shade ${side}"></i>`;
+    wrap._i = wrap.firstChild;
+    return wrap;
+  }
+  // p = 0: page flat on the right. p = 1: page laid flat on the left (or gone, on phones).
+  function curlFrame(st, p) {
+    st.p = p;
+    const W = st.w;
+    const c = W * (1 - p);                                                      // where the paper leaves the page
+    const R = W * (0.045 + 0.16 * Math.sin(Math.PI * p)) * (1 - Math.pow(p, 6)); // radius of the bend
+    const half = Math.PI * R;
+    const map = s => {
+      if (s <= c) return [s, 0];
+      const arc = s - c;
+      if (R > 0.05 && arc <= half) { const th = arc / R; return [c + R * Math.sin(th), R * (1 - Math.cos(th))]; }
+      return [2 * c + half - s, 2 * R + 0.5];
+    };
+    const ang = s => (s <= c ? 0 : R > 0.05 && s - c <= half ? (s - c) / R : Math.PI);
+    const front = a => (0.3 * (1 - Math.cos(a))).toFixed(3);                    // paper turning away from the light
+    const back = a => (0.3 * (1 + Math.cos(a))).toFixed(3);
+    const gloss = a => (0.32 * Math.exp(-Math.pow((a - 2.3) / 0.42, 2))).toFixed(3); // highlight along the curl
+    const paint = (el, key, css) => { if (el[key] !== css) { el[key] = css; el.style.background = css; } };
+    st.leaf._strips.forEach(sp => {
+      const s0 = sp.s, s1 = sp.s + sp.l;
+      const [x0, z0] = map(s0), [x1, z1] = map(s1);
+      const a = Math.atan2(z1 - z0, x1 - x0);
+      sp.el.style.transform = `translate3d(${(x0 - s0).toFixed(2)}px, 0, ${z0.toFixed(2)}px) rotateY(${(-a).toFixed(4)}rad)`;
+      const a0 = ang(s0), a1 = ang(s1);
+      paint(sp.fd, '_bg', `linear-gradient(90deg, rgba(0,0,0,${front(a0)}), rgba(0,0,0,${front(a1)}))`);
+      // the back face is turned around, so its left edge is the strip's right edge
+      paint(sp.bd, '_bg', `linear-gradient(90deg, rgba(0,0,0,${back(a1)}), rgba(0,0,0,${back(a0)}))`);
+      paint(sp.gl, '_bg', `linear-gradient(90deg, rgba(255,255,255,${gloss(a1)}), rgba(255,255,255,${gloss(a0)}))`);
+    });
+    const fade = Math.pow(Math.sin(Math.PI * Math.min(1, Math.max(0, p))), 0.6);
+    st.shR._i.style.transform = `translateX(${(c + R).toFixed(1)}px)`;          // shadow the curl casts ahead of it
+    st.shR._i.style.opacity = fade.toFixed(3);
+    if (st.shL) {                                                                // shadow under the landing edge
+      const edge = 2 * c + half - W;
+      st.shL._i.style.transform = `translateX(${(W + edge - 60).toFixed(1)}px)`;
+      st.shL._i.style.opacity = (edge < 0 ? Math.min(1, R / 12) * fade : 0).toFixed(3);
+    }
+  }
+  function curlBegin(dir) {
+    const n = rIdx + dir;
+    if (curlState || n < 0 || n >= BOOKS.length) return null;
+    const nb = BOOKS[n], cb = BOOKS[rIdx], cur = rIdx;
+    const sp = $('#rdSpread'), L = $('#rdLeft'), R = $('#rdRight');
+    let st;
+    if (!narrowMQ.matches) {
+      // two-page spread: the right page turns over the spine (forward), or the left page turns back (backward)
+      L.scrollTop = 0;
+      R.scrollTop = 0;
+      const w = R.offsetWidth, h = R.offsetHeight, spine = R.offsetLeft, top = R.offsetTop;
+      const leaf = makeLeaf({
+        w, h, frontCls: 'rd-page rd-right', backCls: 'rd-page rd-left',
+        front: dir > 0 ? R.innerHTML : rightPage(nb, n),
+        back: dir > 0 ? leftPage(nb, n) : L.innerHTML
+      });
+      leaf.style.left = spine + 'px';
+      leaf.style.top = top + 'px';
+      const shR = makeShade('r', spine, top, w, h), shL = makeShade('l', spine - w, top, w, h);
+      sp.append(shR, shL, leaf);
+      const saved = dir > 0 ? R.innerHTML : L.innerHTML;
+      if (dir > 0) R.innerHTML = rightPage(nb, n); else L.innerHTML = leftPage(nb, n);
+      st = { leaf, shR, shL, w, dir, n };
+      st.finish = ok => {
+        if (ok) { if (dir > 0) L.innerHTML = leftPage(nb, n); else R.innerHTML = rightPage(nb, n); rIdx = n; }
+        else if (dir > 0) R.innerHTML = saved; else L.innerHTML = saved;
+        leaf.remove(); shR.remove(); shL.remove();
+      };
+    } else {
+      // single page: the page peels off to the left, or the previous page curls back in
+      const rr = readerEl.getBoundingClientRect(), sr = sp.getBoundingClientRect();
+      const w = sr.width, h = sr.height, scroll = sp.scrollTop;
+      const host = document.createElement('div');
+      host.className = 'curl-host';
+      host.style.cssText = `left:${sr.left - rr.left}px;top:${sr.top - rr.top}px;width:${w}px;height:${h}px`;
+      const content = dir > 0 ? bookPage(cb, cur) : bookPage(nb, n);
+      const off = dir > 0 ? scroll : 0;
+      const leaf = makeLeaf({ w, h, front: content, back: content, frontCls: 'curl-col', backCls: 'curl-col', mirrorBack: true, frontScroll: off, backScroll: off, autoHeight: true });
+      const shR = makeShade('r', 0, 0, w, h);
+      host.append(shR, leaf);
+      readerEl.appendChild(host);
+      if (dir > 0) { L.innerHTML = leftPage(nb, n); R.innerHTML = rightPage(nb, n); sp.scrollTop = 0; }
+      st = { leaf, shR, shL: null, w, dir, n };
+      st.finish = ok => {
+        if (dir > 0 && !ok) { L.innerHTML = leftPage(cb, cur); R.innerHTML = rightPage(cb, cur); sp.scrollTop = scroll; }
+        if (ok) { rIdx = n; if (dir < 0) paintReader(); }
+        host.remove();
+      };
+    }
+    curlState = st;
+    curlFrame(st, dir > 0 ? 0 : 1);
+    return st;
+  }
+  function curlAnimate(st, to, dur, ease, done) {
+    const from = st.p, t0 = performance.now();
+    cancelAnimationFrame(st.raf);
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      curlFrame(st, from + (to - from) * ease(k));
+      if (k < 1) st.raf = requestAnimationFrame(step); else done();
+    };
+    st.raf = requestAnimationFrame(step);
+  }
+  function curlEnd(ok) {
+    const st = curlState;
+    if (!st) return;
+    cancelAnimationFrame(st.raf);
+    st.finish(ok);
+    curlState = null;
+    readerChrome(rIdx);
+  }
+  // arrows, keys and edge taps play the whole turn
   function turn(dir) {
     const n = rIdx + dir;
-    if (n < 0 || n >= BOOKS.length) return;
-    const sp = $('#rdSpread');
+    if (curlState || n < 0 || n >= BOOKS.length) return;
     if (reduce) { rIdx = n; paintReader(); return; }
-    sp.classList.remove('turn-next', 'turn-prev');
-    void sp.offsetWidth;
-    sp.classList.add(dir > 0 ? 'turn-next' : 'turn-prev');
-    setTimeout(() => { rIdx = n; paintReader(); }, 240);
-    setTimeout(() => sp.classList.remove('turn-next', 'turn-prev'), 520);
+    const st = curlBegin(dir);
+    if (!st) return;
+    readerChrome(n);
+    curlAnimate(st, dir > 0 ? 1 : 0, 860, easeInOut, () => curlEnd(true));
   }
   $('#rdNext').addEventListener('click', () => turn(1));
   $('#rdPrev').addEventListener('click', () => turn(-1));
@@ -371,16 +802,61 @@
     if (e.key === 'ArrowRight') turn(1);
     if (e.key === 'ArrowLeft') turn(-1);
   });
+  // drag the page: it follows your finger, then finishes or falls back when you let go
   (() => {
-    let x0 = null, y0 = null;
     const stage = $('#rdStage');
-    stage.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; });
-    stage.addEventListener('pointerup', e => {
-      if (x0 === null) return;
-      const dx = e.clientX - x0, dy = e.clientY - y0;
-      if (Math.abs(dx) > 60 && Math.abs(dy) < 60) turn(dx < 0 ? 1 : -1);
-      x0 = null;
+    let drag = null;
+    const progressOf = (st, dx) => {
+      const span = st.w * (narrowMQ.matches ? 1.05 : 1.5);
+      const q = Math.min(1, Math.max(0, (st.dir > 0 ? -dx : dx) / span));
+      return st.dir > 0 ? q : 1 - q;
+    };
+    stage.addEventListener('pointerdown', e => {
+      if (curlState || e.button !== 0 || reduce) return;
+      drag = { x0: e.clientX, y0: e.clientY, id: e.pointerId, live: false, vx: 0, lx: e.clientX, lt: performance.now() };
     });
+    stage.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+      if (!drag.live) {
+        if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }
+        if (Math.abs(dx) < 10) return;
+        if (!curlBegin(dx < 0 ? 1 : -1)) { drag = null; return; }
+        drag.live = true;
+        readerEl.classList.add('curling');
+        try { stage.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+      }
+      const now = performance.now();
+      drag.vx = (e.clientX - drag.lx) / Math.max(1, now - drag.lt);
+      drag.lx = e.clientX;
+      drag.lt = now;
+      curlFrame(curlState, progressOf(curlState, dx));
+    });
+    const release = e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag;
+      drag = null;
+      readerEl.classList.remove('curling');
+      if (!d.live) {
+        // a tap near either edge turns the page, like the margins in Books
+        const r = stage.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width;
+        const still = Math.abs(e.clientX - d.x0) < 6 && Math.abs(e.clientY - d.y0) < 6;
+        if (e.type === 'pointerup' && still && !e.target.closest('button, a') && !String(window.getSelection())) {
+          if (fx > 0.86) turn(1); else if (fx < 0.14) turn(-1);
+        }
+        return;
+      }
+      const st = curlState;
+      if (!st) return;
+      const forward = st.dir > 0 ? -d.vx : d.vx;
+      const gone = st.dir > 0 ? st.p : 1 - st.p;
+      const ok = e.type !== 'pointercancel' && forward > -0.3 && (gone > 0.3 || forward > 0.45);
+      const target = st.dir > 0 ? (ok ? 1 : 0) : (ok ? 0 : 1);
+      if (ok) readerChrome(st.n);
+      curlAnimate(st, target, 170 + 560 * Math.abs(target - st.p), easeOutCubic, () => curlEnd(ok));
+    };
+    stage.addEventListener('pointerup', release);
+    stage.addEventListener('pointercancel', release);
   })();
   aaBtn.addEventListener('click', () => {
     aaPop.hidden = !aaPop.hidden;
@@ -605,9 +1081,17 @@
     bbI = k;
     bb.target = FEATURES[BB[k]].hues.map(hexToRgb);
     if (reduce) { bb.cur = bb.target; bbDraw(0); paintBB(); return; }
-    const sw = $('#bbSwap');
-    sw.classList.add('swapping');
-    setTimeout(() => { paintBB(); sw.classList.remove('swapping'); }, 320);
+    // out quickly, in with a stagger: title, then meta, then description
+    const parts = [$('#bbTitle'), $('.bb-meta'), $('#bbDesc')];
+    const key = $('#bbKey');
+    parts.forEach((el, n) => el.animate([{ opacity: 1, transform: 'none', filter: 'blur(0px)' }, { opacity: 0, transform: 'translateY(-10px)', filter: 'blur(6px)' }], { duration: 240, delay: n * 40, easing: EASE_IN, fill: 'forwards' }));
+    key.animate([{ opacity: 0 }], { duration: 260, easing: EASE_IN, fill: 'forwards' });
+    setTimeout(() => {
+      paintBB();
+      parts.concat(key).forEach(el => el.getAnimations().forEach(a => a.cancel()));
+      parts.forEach((el, n) => el.animate([{ opacity: 0, transform: 'translateY(16px)', filter: 'blur(8px)' }, { opacity: 1, transform: 'none', filter: 'blur(0px)' }], { duration: 720, delay: n * 70, easing: EASE_OUT, fill: 'backwards' }));
+      key.animate([{ opacity: 0, scale: 1.08, offset: 0 }], { duration: 1100, easing: EASE_OUT });
+    }, 340);
     scheduleBB();
   }
   function scheduleBB() {
@@ -1108,30 +1592,6 @@
       points: ['Rubric studio for writing scoring criteria', 'WYSIWYG dashboard builder', 'Synced transcript with real audio playback', 'Live call monitor and pipeline controls', 'Tenant auth and workspaces', 'Batch processing with Gemini'],
       stack: ['React', 'TypeScript', 'Vite', 'Java', 'Quarkus', 'Gemini']
     },
-    m0: {
-      name: 'HoneyDoo', icon: 'honey', sub: 'Turn chores into treats', platform: 'iOS', category: 'Lifestyle', year: '2025',
-      desc: ['A shared space where couples split everyday tasks and chores. One partner creates the space and the other joins with a code.', 'Built with offline indicators, sync status, clear error states and notifications.'],
-      points: ['Shared tasks and chores for two', 'Join your partner with a code', 'Offline indicators and sync status', 'Notifications'],
-      stack: ['SwiftUI', 'Supabase', 'UserNotifications']
-    },
-    m1: {
-      name: 'BioDex', icon: 'biodex', sub: 'A field guide that talks back', platform: 'iOS · Flutter', category: 'Education', year: '2026',
-      desc: ['Point the camera at a creature and BioDex identifies it with Gemini, then reads its entry aloud, like the handheld encyclopedias from the games.', 'Built first in SwiftUI with an 8-bit loading animation, then ported to Flutter.'],
-      points: ['Camera identification with Gemini', 'Spoken entries with text-to-speech', 'Retro 8-bit loading animation', 'SwiftUI app and a Flutter port'],
-      stack: ['SwiftUI', 'AVFoundation', 'Flutter', 'Gemini', 'Supabase']
-    },
-    m2: {
-      name: 'Splitty', icon: 'splitty', sub: 'Split group expenses without the awkward maths', platform: 'Android · iOS', category: 'Finance', year: '2025',
-      desc: ['A Flutter expense-splitting app for groups.', 'Supports equal, exact, percentage and itemized splits, settlements, CSV import, statistics with monthly trends, and dark mode.'],
-      points: ['Equal, exact, percentage and itemized splits', 'Group and personal statistics with trend charts', 'CSV import, including settlements', 'Per-group currencies and dark mode'],
-      stack: ['Flutter', 'BLoC', 'Firebase', 'Hive', 'go_router']
-    },
-    m3: {
-      name: 'SpendLens', icon: 'spend', sub: 'Make sense of your card statements', platform: 'Web · Mobile', category: 'Finance', year: '2026',
-      desc: ['Upload credit-card statements and SpendLens reads the PDFs with Gemini, categorizes every transaction and shows where the money goes.', 'Includes category trends, transaction filters, credit-card views and duplicate detection.'],
-      points: ['Statement PDF and CSV parsing with Gemini', 'Category trends over time', 'Duplicate detection', 'Web app and a mobile app in one repo'],
-      stack: ['React', 'TypeScript', 'Vite', 'Supabase', 'Gemini']
-    },
     e0: {
       name: 'SwiftUI Portfolio App', icon: 'folio', sub: 'Portfolio app with user authentication', platform: 'iOS · macOS', category: 'Early work', year: '2021',
       desc: ['A portfolio app written in SwiftUI with user authentication, with iOS and macOS targets.'], stack: ['SwiftUI'],
@@ -1162,15 +1622,15 @@
       `<span class="ap-card-top"><span class="ap-eyebrow">${p.eyebrow}</span><span class="ap-card-title">${p.headline}</span></span>` +
       `<span class="ap-card-bar">${appIcon(p.icon)}<span class="meta"><b>${p.name}</b><small>${p.sub}</small></span><span class="ap-get">VIEW</span></span></button>`;
   }).join('');
+  const LOCK = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 5V3.9a2.4 2.4 0 0 1 4.8 0V5h.4A1.2 1.2 0 0 1 10 6.2v3.6A1.2 1.2 0 0 1 8.8 11H3.2A1.2 1.2 0 0 1 2 9.8V6.2A1.2 1.2 0 0 1 3.2 5zm1.2 0h2.4V3.9a1.2 1.2 0 0 0-2.4 0z"/></svg>';
   const row = k => {
     const p = PROJECTS[k];
     const btn = p.repo
       ? `<a class="ap-get" href="${p.repo}" target="_blank" rel="noopener" aria-label="View ${p.name} on GitHub">VIEW</a>`
-      : `<button class="ap-get locked" type="button" data-p="${k}" aria-label="${p.name}: private repo, show details">PRIVATE</button>`;
+      : `<button class="ap-get" type="button" data-p="${k}" aria-label="${p.name}: private repo, show details">${LOCK}VIEW</button>`;
     return `<li class="ap-row"><button class="ap-row-btn" type="button" data-p="${k}">${appIcon(p.icon)}` +
       `<span><b>${p.name}</b><span class="sub">${p.sub}</span><span class="stk">${p.platform} · ${p.stack.slice(0, 3).join(', ')}</span></span></button>${btn}</li>`;
   };
-  $('#apMore').innerHTML = ['m0', 'm1', 'm2', 'm3'].map(row).join('');
   $('#apEarly').innerHTML = ['e0', 'e1', 'e2', 'e3'].map(row).join('');
 
   const apM = modal($('#apWrap'));
@@ -1191,13 +1651,16 @@
     sheet.scrollTop = 0;
     apM.open('.aps-x');
     if (reduce || !src || !sheet.animate) return;
+    // the sheet grows out of the card or row you tapped (a clip, so nothing stretches)
     requestAnimationFrame(() => {
       const a = src.getBoundingClientRect(), b = sheet.getBoundingClientRect();
       if (!b.width || !b.height) return;
+      const ins = [a.top - b.top, b.right - a.right, b.bottom - a.bottom, a.left - b.left].map(v => Math.round(v) + 'px').join(' ');
+      const rad = getComputedStyle(sheet).borderTopLeftRadius;
       sheet.animate([
-        { transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width}, ${a.height / b.height})`, transformOrigin: 'top left', opacity: 0.4 },
-        { transform: 'none', transformOrigin: 'top left', opacity: 1 }
-      ], { duration: 420, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        { clipPath: `inset(${ins} round 22px)`, opacity: 0.5 },
+        { clipPath: `inset(0px 0px 0px 0px round ${rad})`, opacity: 1 }
+      ], { duration: 640, easing: SPRING });
     });
   }
   $('#projects').addEventListener('click', e => {
@@ -1206,4 +1669,9 @@
     const src = t.closest('.ap-card') || t.closest('.ap-row') || t;
     openApp(t.dataset.p, src);
   });
+
+  /* ---------- start-up ---------- */
+  if (store.get('glass', false)) setGlass(true);
+  else if (!store.get('glassSeen', false)) { glassBtn.classList.add('hint'); store.set('glassSeen', true); }
+  kickDock();
 })();
