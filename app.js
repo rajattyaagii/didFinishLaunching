@@ -1666,11 +1666,7 @@
     honey: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#FFC93C"/><path d="M30 11 46 20v18L30 47 14 38V20z" fill="#FFE08A" stroke="#7A4A00" stroke-width="3" stroke-linejoin="round"/><path d="M22.5 29.5l5.5 5.5 10-11" fill="none" stroke="#7A4A00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     biodex: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#E2402F"/><rect x="38" y="9" width="12" height="5" rx="2.5" fill="#FFB4A8"/><circle cx="30" cy="32" r="16" fill="#fff"/><circle cx="30" cy="32" r="10" fill="#1F2937"/><circle cx="30" cy="32" r="4.5" fill="#4ADE80"/><circle cx="34" cy="28" r="2" fill="#fff"/></svg>',
     splitty: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#10B981"/><path d="M27.5 13a17 17 0 0 0 0 34z" fill="#fff"/><path d="M32.5 13a17 17 0 0 1 0 34z" fill="#D1FAE5"/></svg>',
-    spend: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#1E3A8A"/><rect x="9" y="15" width="32" height="22" rx="4" fill="#93C5FD"/><rect x="9" y="20" width="32" height="4" fill="#1E3A8A"/><circle cx="38" cy="38" r="9" fill="#1E3A8A" stroke="#fff" stroke-width="3.5"/><path d="M44.5 44.5 50 50" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>',
-    folio: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#F97316"/><rect x="13" y="20" width="26" height="28" rx="4" fill="#FED7AA"/><rect x="20" y="12" width="27" height="29" rx="4" fill="#fff"/><circle cx="33.5" cy="22" r="4.5" fill="#F97316"/><rect x="25" y="30" width="17" height="3" rx="1.5" fill="#FDBA74"/><rect x="25" y="35" width="11" height="3" rx="1.5" fill="#FDBA74"/></svg>',
-    coin: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#0F172A"/><circle cx="25" cy="34" r="13" fill="#F59E0B"/><circle cx="35" cy="26" r="13" fill="#FCD34D" stroke="#0F172A" stroke-width="2.5"/><circle cx="35" cy="26" r="7" fill="none" stroke="#B45309" stroke-width="2.5"/></svg>',
-    aa: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#F3F4F6"/><g stroke="#111827" stroke-width="1.6"><path d="M30 25 48 25M30 25 39 40.6M30 25 21 40.6M30 25 12 25M30 25 21 9.4M30 25 39 9.4"/></g><g fill="#111827"><circle cx="48" cy="25" r="2.6"/><circle cx="39" cy="40.6" r="2.6"/><circle cx="21" cy="40.6" r="2.6"/><circle cx="12" cy="25" r="2.6"/><circle cx="21" cy="9.4" r="2.6"/><circle cx="39" cy="9.4" r="2.6"/><circle cx="30" cy="25" r="8"/><circle cx="30" cy="53" r="2.6"/></g><path d="M30 46v5" stroke="#111827" stroke-width="1.6"/></svg>',
-    panda: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#FAFAFA"/><circle cx="16" cy="17" r="7" fill="#111"/><circle cx="44" cy="17" r="7" fill="#111"/><circle cx="30" cy="33" r="17" fill="#fff" stroke="#111" stroke-width="2"/><ellipse cx="23" cy="31" rx="4" ry="5" fill="#111"/><ellipse cx="37" cy="31" rx="4" ry="5" fill="#111"/><circle cx="23.5" cy="30" r="1.3" fill="#fff"/><circle cx="36.5" cy="30" r="1.3" fill="#fff"/><ellipse cx="30" cy="40" rx="3" ry="2" fill="#111"/></svg>'
+    spend: '<svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#1E3A8A"/><rect x="9" y="15" width="32" height="22" rx="4" fill="#93C5FD"/><rect x="9" y="20" width="32" height="4" fill="#1E3A8A"/><circle cx="38" cy="38" r="9" fill="#1E3A8A" stroke="#fff" stroke-width="3.5"/><path d="M44.5 44.5 50 50" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>'
   };
   const SCRIPT = ['Good morning, everyone.', 'Thanks for joining the demo.', 'Today I’ll walk you through', '<b>what we shipped this quarter</b>', 'and what comes next.', 'Let’s start with the numbers.'];
   const ART = {
@@ -1720,26 +1716,6 @@
       desc: ['Upload credit-card statements and SpendLens reads the PDFs with Gemini, categorizes every transaction and shows where the money goes.', 'Includes category trends, transaction filters, credit-card views and duplicate detection.'],
       points: ['Statement PDF and CSV parsing with Gemini', 'Category trends over time', 'Duplicate detection', 'Web app and a mobile app in one repo'],
       stack: ['React', 'TypeScript', 'Vite', 'Supabase', 'Gemini']
-    },
-    e0: {
-      name: 'SwiftUI Portfolio App', icon: 'folio', sub: 'Portfolio app with user authentication', platform: 'iOS · macOS', category: 'Early work', year: '2021',
-      desc: ['A portfolio app written in SwiftUI with user authentication, with iOS and macOS targets.'], stack: ['SwiftUI'],
-      repo: 'https://github.com/rajattyaagii/SwiftUI-Portfolio-App'
-    },
-    e1: {
-      name: 'CoinExchangeRates', icon: 'coin', sub: 'Coin exchange rates in Flutter', platform: 'Android · iOS', category: 'Early work', year: '2020',
-      desc: ['A Flutter project for coin exchange rates.'], stack: ['Flutter', 'Dart'],
-      repo: 'https://github.com/rajattyaagii/CoinExchangeRates'
-    },
-    e2: {
-      name: 'AA Game', icon: 'aa', sub: 'An arcade game built in Unity', platform: 'Unity', category: 'Early work', year: '2018',
-      desc: ['An arcade game built in Unity and written in C#.'], stack: ['Unity', 'C#'],
-      repo: 'https://github.com/rajattyaagii/AA-Game'
-    },
-    e3: {
-      name: 'whitepanda', icon: 'panda', sub: 'A static site, live on GitHub Pages', platform: 'Web', category: 'Early work', year: '2019',
-      desc: ['A static website built with HTML and CSS. It is still live at rajattyaagii.github.io/whitepanda.'], stack: ['HTML', 'CSS'],
-      repo: 'https://github.com/rajattyaagii/whitepanda'
     }
   };
   const appIcon = k => `<span class="ai" aria-hidden="true">${ICON_SVG[k]}</span>`;
@@ -1761,7 +1737,6 @@
       `<span><b>${p.name}</b><span class="sub">${p.sub}</span><span class="stk">${p.platform} · ${p.stack.filter(s => !p.platform.includes(s)).slice(0, 3).join(', ')}</span></span></button>${btn}</li>`;
   };
   $('#apMore').innerHTML = ['m0', 'm1', 'm2', 'm3'].map(row).join('');
-  $('#apEarly').innerHTML = ['e0', 'e1', 'e2', 'e3'].map(row).join('');
 
   const apM = modal($('#apWrap'));
   function sheetHTML(p) {
